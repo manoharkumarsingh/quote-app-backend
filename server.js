@@ -11,6 +11,10 @@ import dotenv from "dotenv";
 import express from "express";
 import http from "http";
 import path from "path";
+import { WebSocketServer } from "ws";  // For websocket support
+import { useServer } from "graphql-ws/lib/use/ws";  // GraphQL WS server
+import { makeExecutableSchema } from '@graphql-tools/schema'; // Schema tools
+
 const __dirname = path.resolve();
 
 const port = process.env.PORT || 4000;
@@ -34,13 +38,13 @@ mongoose.connection.on("error", (err) => {
   console.log("error connecting", err);
 });
 
-//import models here
+// Import models here
 import "./models/Quotes.js";
 import "./models/User.js";
 
 import resolvers from "./resolvers.js";
 
-// this is middleware
+// This is middleware for context (used for authentication)
 const context = ({ req }) => {
   const { authorization } = req.headers;
   if (authorization) {
@@ -48,12 +52,37 @@ const context = ({ req }) => {
     return { userId };
   }
 };
-const server = new ApolloServer({
+
+// Create executable schema for subscriptions
+const schema = makeExecutableSchema({
   typeDefs,
   resolvers,
+});
+
+// Set up WebSocket server for subscriptions
+const wsServer = new WebSocketServer({
+  server: httpServer,
+  path: "/graphql",
+});
+
+const serverCleanup = useServer({ schema }, wsServer);
+
+
+// Initialize Apollo Server
+const server = new ApolloServer({
+  schema,
   context,
   plugins: [
     ApolloServerPluginDrainHttpServer({ httpServer }),
+    {
+      async serverWillStart() {
+        return {
+          async drainServer() {
+            await serverCleanup.dispose();
+          },
+        };
+      },
+    },
     process.env.NODE_ENV !== "production"
       ? ApolloServerPluginLandingPageGraphQLPlayground()
       : ApolloServerPluginLandingPageDisabled(),
@@ -73,6 +102,7 @@ server.applyMiddleware({
   path: "/graphql",
 });
 
+// Start the HTTP server with WebSocket support
 httpServer.listen({ port }, () => {
-  console.log(`🚀  Server ready at 4000 ${server.graphqlPath}`);
+  console.log(`🚀  Server ready at http://localhost:${port}${server.graphqlPath}`);
 });

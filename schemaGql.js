@@ -51,6 +51,10 @@ const typeDefs = gql`
     email: String!
     password: String!
   }
+
+  type Subscription {
+    quoteCreated: QuoteWithName
+  }
 `;
 
 export default typeDefs;

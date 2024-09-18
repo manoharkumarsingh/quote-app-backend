@@ -2,9 +2,11 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { PubSub } from "graphql-subscriptions";
 const User = mongoose.model("User");
 const Quote = mongoose.model("Quote");
-
+const pubsub = new PubSub();  // Create a PubSub instance
+const QUOTE_CREATED = "QUOTE_CREATED";
 const resolvers = {
   Query: {
     users: async () => await User.find(),
@@ -59,7 +61,24 @@ const resolvers = {
         by: userId,
       });
       await newQuote.save();
+
+      // Publish the quoteCreated event
+      const createdQuote = {
+        name: newQuote.name,
+        by: {
+          _id: userId,
+          firstName: (await User.findById(userId)).firstName,
+        },
+      };
+      pubsub.publish(QUOTE_CREATED, { quoteCreated: createdQuote });
+
       return "Quote saved successfully";
+    },
+  },
+
+  Subscription: {
+    quoteCreated: {
+      subscribe: () => pubsub.asyncIterator([QUOTE_CREATED]),
     },
   },
 };
